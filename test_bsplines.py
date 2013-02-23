@@ -1,5 +1,5 @@
 """
-Unit tests for bspline module.
+Unit tests for the b-spline module.
 
 """
 from __future__ import division, print_function, absolute_import
@@ -30,7 +30,7 @@ def test_bspline_values():
             tck = bs.Tck(t, c[j], k)
             res = bs.bsplval(x, tck)
             assert_almost_equal(res, b[j], err_msg=msg)
-        # Prepare next set of Berstein polynomial values if needed.
+        # Prepare next set of Bernstein polynomial values if needed.
         if n < maxord:
             tmp = b
             b = np.zeros((n + 1, numval))

@@ -74,7 +74,7 @@ def _asvalid_t(t, k, dtype=np.double, copy=False):
        ``n >= 2*k + 2``, where `k` is the degree of the spline.
     k : int
        Degree of the b-spline. It is assumed to have been checked.
-    dtype : {np.double, dtype}, optional
+    dtype : {double, dtype}, optional
        The dtype of the knot points. It is assumed to have been checked.
     copy : {False, True}
        If true, always return a copy of the knot points.
@@ -116,7 +116,7 @@ def _asvalid_c(c, t, k, dtype=np.double, copy=False):
        Array of knot points, assumed to have been validated.
     k : int
        Degree of the spline, assumed to have been validated.
-    dtype : {np.double, dtype}, optional
+    dtype : {double, dtype}, optional
        The dtype of the knot points. It is assumed to have been checked.
     copy : {False, True}
        If true, always return a copy of the coefficients.
@@ -169,14 +169,14 @@ def _bsplvander(x, t, k, dtype=np.double):
         1-D array of knot points in non-decreasing order.
     k : int
         Degree of the spline.
-    dtype: {np.double, dtype}, optional
+    dtype: {double, dtype}, optional
         Only np.double is currently supported.
 
     Returns
     -------
-    van : ndarray, shape(m, n - deg - 1)
-        Psuedo-Vandermonde matrix for the b-splines of degree `deg` on the
-        knot sequence `knots`.
+    van : ndarray, shape(m, n - k - 1)
+        A pseudo-Vandermonde matrix for the b-splines of degree `k` on
+        the knot sequence `knots`.
 
     """
     nord = k + 1
@@ -216,15 +216,15 @@ def _bsplval(tck, x):
 
     Parameters
     ----------
-    tck : BSpline instance
-        Spline of which to take the derivative.
+    tck : Tck
+        The b-spline of which to take the derivative.
     n   : int
-        Number of derivatives to take.
+        The number of derivatives to take.
 
     Returns
     -------
     y : ndarray
-       BSpline evaluated points `x`
+       The b-spline evaluated at the points `x`
 
     """
     t, c, k = tck.tck
@@ -262,13 +262,13 @@ def _bsplderiv(tck, n):
     Parameters
     ----------
     tck : Tck
-        Spline parameters of which to take the derivative.
+        The spline parameters of which to take the derivative.
     n   : int
-        Number of derivatives to take.
+        The number of derivatives to take.
 
     Returns
     -------
-    deriv : Tck instance
+    derivative : Tck instance
 
     """
     t, c, k = tck.tck
@@ -287,11 +287,11 @@ def _bsplderiv(tck, n):
 #
 
 class Tck(object):
-    """Class to hold tck values for bsplines.
+    """Class to hold tck values for b-splines.
 
-    This is needed so that we do not need to validate the
-    contents whenever tck is needed to evaluate a spline at the
-    C level.
+    This is needed so that we do not need to validate the contents
+    whenever the knot points, coefficients, and degree is needed to
+    evaluate a spline at the C level.
 
     Parameters
     ----------
@@ -305,7 +305,7 @@ class Tck(object):
        where `k` is the degree of the spline.
     k : int
        Degree of the spline, It must be >= 0.
-    dtype : {np.double, dtype}, optional
+    dtype : {double, dtype}, optional
        The dtype of the knot points. Only np.double is currently
        supported.
 
@@ -380,24 +380,24 @@ def bsplvander(x, t, k, dtype=np.double):
 
     The returned matrix is defined by
 
-        ``v[i, j] = N_{j, deg}(x[i])``
+        ``v[i, j] = N_{j, k}(x[i])``
 
-    Where ``N_{j, deg}`` is the j'th basis b-spline of degree `deg`. The
-    number of basis splines is ``n - deg - 1``, where n is the number
+    Where ``N_{j, k}`` is the j'th basis b-spline of degree `k`. The
+    number of basis splines is ``n - k - 1``, where n is the number
     of knots.
 
     The knot points must be non-decreasing and the multiplicity of any
-    given knot must be less than `deg` + 1. Note that the knots in the
-    closed interval of definition are assumed to be extended at both ende
-    by `deg` new knots. Usually those knots are repeats of the end points
-    of the valid interval, but they need not be. Consequently the end
-    points are ``knots[deg]`` and ``knots[n - deg - 1]``.
+    given knot must be less than `k` + 1. Note that the knots in the
+    closed interval of definition are assumed to be extended at both
+    ends by `k` new knots. Usually those knots are repeats of the end
+    points of the valid interval, but they need not be. Consequently the
+    end points are ``t[k]`` and ``t[n - k - 1]``.
 
-    The points of `x` can be any valid floating point values. If a value is
-    located outside of the valid interval, then the b-splines that are
-    non-zero on the closest subinterval in the valid interval are
-    extrapolated as polynomials. dThis allows for roundoff error at the end
-    points and the inclusion of the right most end point in the valid
+    The points of `x` can be any valid floating point values. If a value
+    is located outside of the valid interval, then the b-splines that
+    are non-zero on the closest subinterval in the valid interval are
+    extrapolated as polynomials. This allows for roundoff error at the
+    end points and the inclusion of the right end point in the valid
     interval.
 
     Parameters
@@ -408,14 +408,14 @@ def bsplvander(x, t, k, dtype=np.double):
         1-D array of knot points in non-decreasing order.
     k : int
         Degree of the spline.
-    dtype: {np.double, dtype}, optional
-        Only np.double is currently supported.
+    dtype: {double, dtype}, optional
+        Only double is currently supported.
 
     Returns
     -------
-    van : ndarray, shape(m, n - deg - 1)
-        Psuedo-Vandermonde matrix for the b-splines of degree `deg` on the
-        knot sequence `knots`.
+    van : ndarray, shape (m, n - k - 1)
+        Pseudo-Vandermonde matrix for the b-splines of degree `k` on the
+        knot sequence `t`.
 
     Raises
     ------
@@ -468,13 +468,13 @@ def bsplderiv(tck, n=1):
     Parameters
     ----------
     tck : Tck
-        Spline of which to take the derivative.
+        The b-spline of which to take the derivative.
     n   : {1, int}
         Number of derivatives to take.
 
     Returns
     -------
-    deriv : BSpline instance
+    deriv : Tck
 
     """
     n = _asvalid_k(n)
