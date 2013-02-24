@@ -1,6 +1,8 @@
 import numpy as np
 
 
+type_msg = "unsupported operand type(s) for %s: '%s' and '%s'"
+
 #
 # Validators
 #
@@ -359,7 +361,7 @@ class Tck(object):
         try:
             c = c1 + c2
         except:
-            raise ValueError("Incompatible scalar")
+            raise ValueError("Incompatible array scalar")
 
         return Tck(self.t, c, self.k)
 
@@ -433,6 +435,67 @@ class Tck(object):
             return False
         else:
             return True
+
+
+    def __mul__(self, other):
+        if isinstance(other, Tck):
+            raise TypeError(type_msg %('*', 'Tck', 'Tck'))
+        c1 = self.c
+        try:
+            c2 = np.array(other, dtype=self.dtype)
+        except:
+            return NotImplemented
+
+        # We only allow multiplication by "array scalars"
+        if c2.ndim > self.range_ndim:
+            raise ValueError("Incompatible scalar")
+
+        try:
+            c = c1 * c2
+        except:
+            raise ValueError("Incompatible scalar")
+
+        return Tck(self.t, c, self.k)
+
+
+    def __div__(self, other):
+        if isinstance(other, Tck):
+            raise TypeError(type_msg % ('/', 'Tck', 'Tck'))
+
+        c1 = self.c
+        try:
+            c2 = np.array(other, dtype=self.dtype)
+        except:
+            return NotImplemented
+
+        # We only allow division by "array scalars"
+        if c2.ndim > self.range_ndim:
+            raise ValueError("Incompatible scalar")
+
+        try:
+            c = c1 / c2
+        except:
+            raise ValueError("Incompatible scalar")
+
+        return Tck(self.t, c, self.k)
+
+
+    def __rmul__(self, other):
+        c1 = self.c
+        try:
+            c2 = np.array(other, dtype=self.dtype)
+        except:
+            raise TypeError(type_msg % ('*', type(other).__name__, 'Tck'))
+
+        if c2.ndim > self.range_ndim:
+            raise ValueError("Incompatible scalar")
+
+        try:
+            c = c2 * c1
+        except:
+            raise ValueError("Incompatible scalar")
+
+        return Tck(self.t, c, self.k)
 
 
     @property
