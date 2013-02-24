@@ -323,6 +323,8 @@ class Tck(object):
        supported.
 
     """
+    __array_priority__ = 1000
+
     def __init__(self, t, c, k, dtype=np.double, ndim=1):
         k = _asvalid_k(k)
         t = _asvalid_t(t, k, dtype=dtype)
@@ -332,6 +334,105 @@ class Tck(object):
         self._c = c
         self._dom = [(a[n], a[-(n + 1)]) for n, a in zip(k, t)]
         self._dtype = dtype
+
+
+    def __add__(self, other):
+        c1 = self.c
+        if isinstance(other, Tck):
+            if not self._is_compatible_tck(other):
+                raise ValueError("Incompatible knots")
+            c2 = other.c
+            n = c1.ndim - c2.ndim
+            m = self.domain_ndim
+            # Make vectors broadcast
+            if n > 0:
+                c2.shape = c2.shape[:m] + (1,)*n + c2.shape[m:]
+            elif n < 0:
+                c1.shape = c1.shape[:m] + (1,)*n + c1.shape[m:]
+        else:
+            try:
+                c2 = np.array(other, dtype=self.dtype)
+            except:
+                return NotImplemented
+            if c2.ndim > self.range_ndim:
+                raise ValueError("Incompatible scalar")
+        try:
+            c = c1 + c2
+        except:
+            raise ValueError("Incompatible scalar")
+
+        return Tck(self.t, c, self.k)
+
+
+    def __sub__(self, other):
+        c1 = self.c
+        if isinstance(other, Tck):
+            if not self._is_compatible_tck(other):
+                raise ValueError("Incompatible knots")
+            c2 = other.c
+            n = c1.ndim - c2.ndim
+            m = self.domain_ndim
+            # Make vectors broadcast
+            if n > 0:
+                c2.shape = c2.shape[:m] + (1,)*n + c2.shape[m:]
+            elif n < 0:
+                c1.shape = c1.shape[:m] + (1,)*n + c1.shape[m:]
+        else:
+            try:
+                c2 = np.array(other, dtype=self.dtype)
+            except:
+                return NotImplemented
+            if c2.ndim > self.range_ndim:
+                raise ValueError("Incompatible scalar")
+        try:
+            c = c1 - c2
+        except:
+            raise ValueError("Incompatible scalar")
+
+        return Tck(self.t, c, self.k)
+
+
+    def __radd__(self, other):
+        c1 = self.c
+        try:
+            c2 = np.array(other, dtype=self.dtype)
+        except:
+            return NotImplemented
+        if c2.ndim > self.range_ndim:
+            raise ValueError("Incompatible scalar")
+
+        try:
+            c = c2 + c1
+        except:
+            raise ValueError("Incompatible scalar")
+
+        return Tck(self.t, c, self.k)
+
+
+    def __rsub__(self, other):
+        c1 = self.c
+        try:
+            c2 = np.array(other, dtype=self.dtype)
+        except:
+            return NotImplemented
+        if c2.ndim > self.range_ndim:
+            raise ValueError("Incompatible scalar")
+
+        try:
+            c = c2 - c1
+        except:
+            raise ValueError("Incompatible scalar")
+
+        return Tck(self.t, c, self.k)
+
+
+    def _is_compatible_tck(self, other):
+        if self.dtype != other.dtype:
+            return False
+        elif any([(t1 != t2).any() for t1, t2 in zip(self.t, other.t)]):
+            return False
+        else:
+            return True
 
 
     @property
@@ -365,13 +466,23 @@ class Tck(object):
 
 
     @property
-    def domain_dimension(self):
+    def domain_ndim(self):
         return len(self.k)
 
 
     @property
-    def range_dimension(self):
-        return len(self.c.shape) - len(self.k)
+    def domain_shape(self):
+        return self.c.shape[:len(self.k)]
+
+
+    @property
+    def range_ndim(self):
+        return self.c.ndim - len(self.k)
+
+
+    @property
+    def range_shape(self):
+        return self.c.shape[len(self.k):]
 
 
 class BSpline(Tck):
