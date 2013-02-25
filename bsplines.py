@@ -224,7 +224,7 @@ def _bsplvander(x, t, k, dtype=np.double):
     return van
 
 
-def _bsplval(tck, x):
+def _bsplval(tck, x, axis=0):
     """Cython implementation of bsplval.
 
     See bsplval for documentation. All arguments are assumed valid.
@@ -242,7 +242,10 @@ def _bsplval(tck, x):
        The b-spline evaluated at the points `x`
 
     """
-    t, c, k = tck.tck
+    t_, c_, k_ = tck.tck
+    t = t_.pop(axis)
+    c = np.rollaxis(c_, axis)
+    k = k_.pop(axis)
     nord = k + 1
     m = len(x)
     n = len(t) - nord
@@ -253,8 +256,8 @@ def _bsplval(tck, x):
     u = np.searchsorted(t, x, side='right')
     u.clip(nord, n, out=u)
 
-    val = np.empty((m,), dtype=tck.dtype)
-    ci = np.empty((nord,), dtype=tck.dtype)
+    val = np.empty((m,) + c.shape[1:], dtype=tck.dtype)
+    ci = np.empty((nord,) + c.shape[1:], dtype=tck.dtype)
     for i in range(m):
         ui = u[i]
         xi = x[i]
@@ -266,10 +269,12 @@ def _bsplval(tck, x):
                 ci[l] = (1 - a) * ci[l] + a * ci[l + 1]
         val[i] = ci[0]
 
-    return val
+    val = np.rollaxis(val, axis)
+
+    return Tck(t_, val, k_)
 
 
-def _bsplderiv(tck, n):
+def _bsplderiv(tck, n, axis=0):
     """Cython implementation of bsplderiv.
 
     All arguments are assumed valid.
@@ -286,15 +291,22 @@ def _bsplderiv(tck, n):
     derivative : Tck instance
 
     """
-    t, c, k = tck.tck
+    t_, c_, k_ = tck.tck
+    t = t_[axis]
+    c = np.rollaxis(c_, axis)
+    k = k_[axis]
     dtype = tck.dtype
 
     for i in range(n):
         c = k * (c[1:] - c[:-1]) / (t[k + 1: -1] - t[1: -(k + 1)])
         t = t[1:-1]
         k = k - 1
+    
+    t_[axis] = t
+    c_ = np.rollaxis(c, 0, axis + 1)
+    k_[axis] = k
 
-    return Tck(t, c, k, dtype=dtype)
+    return Tck(t_, c_, k_, dtype=dtype)
 
 
 #
@@ -634,10 +646,11 @@ def bsplvander(x, t, k, dtype=np.double):
 
     """
     dtype = _asvalid_dtype(dtype)
+    # Fixme, need different routines?
     k = _asvalid_k(k)
     t = _asvalid_t(t, k, dtype=dtype)
     x = _asvalid_c_array(x, dtype=dtype)
-    return _bsplvander(x, t, k, dtype=dtype)
+    return _bsplvander(x, t[0], k[0], dtype=dtype)
 
 
 def bsplval(x, tck):
@@ -661,7 +674,7 @@ def bsplval(x, tck):
     return _bsplval(tck, x)
 
 
-def bsplderiv(tck, n=1):
+def bsplderiv(tck, n=1, axis=0):
     """Take derivatives of the b-spline defined by tck.
 
     All arguments are assumed valid.
@@ -678,12 +691,12 @@ def bsplderiv(tck, n=1):
     deriv : Tck
 
     """
-    n = _asvalid_k(n)
+    n = int(n)
     if not isinstance(tck, Tck):
         raise ValueError("tck must be an instance of Tck")
-    if n > tck.k:
+    if n > tck.k[axis]:
         raise ValueError("n is larger than the spline degree")
-    return _bsplderiv(tck, n)
+    return _bsplderiv(tck, n, axis)
 
 
 def bsplinteg(tck, n=1):
