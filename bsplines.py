@@ -7,10 +7,6 @@ type_msg = "unsupported operand type(s) for %s: '%s' and '%s'"
 # Validators
 #
 
-class ConversionError(Exception):
-    pass
-
-
 def _asvalid_dtype(dt):
     """Check supported dtype.
 
@@ -563,34 +559,6 @@ class Tck(object):
     @property
     def tck(self):
         return self.t, self.c, self.k
-
-
-class BSpline(Tck):
-
-    def __call__(self, x):
-        """Evaluate b-spline at points x.
-
-        Parameters
-        ----------
-        x : array_like
-            Points at which to evaluate the spline.
-
-        Returns
-        -------
-        y : ndarray
-            The b-spline evaluated at the points `x`. It has the type
-            specified by `dtype`.
-
-        """
-        x = _asvalid_c_array(x, dtype=dtype)
-        return _bsplval(self, x)
-
-
-    def deriv(self, n):
-        n = asvalid_k(n)
-        if n > self.k:
-            raise ValueError("n is larger than the spline degree")
-        return _bsplderiv(self, n)
 
 
 def bsplvander(x, t, k, dtype=np.double):
