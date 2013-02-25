@@ -98,15 +98,19 @@ def _asvalid_t(t, k, dtype):
     try:
         try:
             t = np.array(t, dtype=dtype, ndmin=1)
+            t.setflags(write=0)
             if t.ndim == 1 and len(t) != 0:
                 t = [t]
             elif t.ndim == 2:
-                t = [t_ for t_ in t]
+                t = list[t]
             else:
                 raise ValueError()
         except:
             t = [np.array(t_, dtype=dtype, ndmin=1) for t_ in t]
+            for t_ in t:
+                t_.setflags(write=0)
     except:
+        print t
         raise ValueError("Unable to convert knot points to arrays.")
     if len(t) != len(k):
         raise ValueError("Knot points and degrees have different dimensions")
@@ -118,6 +122,7 @@ def _asvalid_t(t, k, dtype):
         raise ValueError("First interior interval must have positive length.")
     if any([t_[-(k_ + 2)] == t_[-(k_ + 1)] for t_, k_ in zip(t, k)]):
         raise ValueError("Last interior interval must have positive length.")
+
     return t
 
 
@@ -301,7 +306,7 @@ def _bsplderiv(tck, n, axis=0):
         c = k * (c[1:] - c[:-1]) / (t[k + 1: -1] - t[1: -(k + 1)])
         t = t[1:-1]
         k = k - 1
-    
+
     t_[axis] = t
     c_ = np.rollaxis(c, 0, axis + 1)
     k_[axis] = k
@@ -343,11 +348,11 @@ class Tck(object):
         k = _asvalid_k(k)
         t = _asvalid_t(t, k, dtype=dtype)
         c = _asvalid_c(c, t, k, dtype=dtype)
-        self._k = k
-        self._t = t
-        self._c = c
-        self._dom = [(a[n], a[-(n + 1)]) for n, a in zip(k, t)]
-        self._dtype = dtype
+        self.__k = k
+        self.__t = t
+        self.__c = c
+        self.__dom = [(a[n], a[-(n + 1)]) for n, a in zip(k, t)]
+        self.__dtype = dtype
 
 
     def __add__(self, other):
@@ -440,15 +445,6 @@ class Tck(object):
         return Tck(self.t, c, self.k)
 
 
-    def _is_compatible_tck(self, other):
-        if self.dtype != other.dtype:
-            return False
-        elif any([(t1 != t2).any() for t1, t2 in zip(self.t, other.t)]):
-            return False
-        else:
-            return True
-
-
     def __mul__(self, other):
         if isinstance(other, Tck):
             raise TypeError(type_msg %('*', 'Tck', 'Tck'))
@@ -510,54 +506,63 @@ class Tck(object):
         return Tck(self.t, c, self.k)
 
 
+    def _is_compatible_tck(self, other):
+        if self.dtype != other.dtype:
+            return False
+        elif any([(t1 != t2).any() for t1, t2 in zip(self.t, other.t)]):
+            return False
+        else:
+            return True
+
+
     @property
     def dtype(self):
-        return self._dtype
+        return self.__dtype
 
 
     @property
     def t(self):
-        return self._t
+        return self.__t[:]
 
 
     @property
     def c(self):
-        return self._c
+        return self.__c.view()
 
 
     @property
     def k(self):
-        return self._k
-
-
-    @property
-    def tck(self):
-        return self._t, self._c, self._k
+        return self.__k[:]
 
 
     @property
     def domain(self):
-        return self._dom
+        return self.__dom[:]
 
 
     @property
     def domain_ndim(self):
-        return len(self.k)
+        return len(self.__k)
 
 
     @property
     def domain_shape(self):
-        return self.c.shape[:len(self.k)]
+        return self.c.shape[:len(self.__k)]
 
 
     @property
     def range_ndim(self):
-        return self.c.ndim - len(self.k)
+        return self.c.ndim - len(self.__k)
 
 
     @property
     def range_shape(self):
-        return self.c.shape[len(self.k):]
+        return self.c.shape[len(self.__k):]
+
+
+    @property
+    def tck(self):
+        return self.t, self.c, self.k
 
 
 class BSpline(Tck):
@@ -583,7 +588,7 @@ class BSpline(Tck):
 
     def deriv(self, n):
         n = asvalid_k(n)
-        if n > self._k:
+        if n > self.k:
             raise ValueError("n is larger than the spline degree")
         return _bsplderiv(self, n)
 
