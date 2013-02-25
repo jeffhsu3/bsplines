@@ -1,7 +1,14 @@
+import collections
 import numpy as np
 
 
 type_msg = "unsupported operand type(s) for %s: '%s' and '%s'"
+
+def nonneg_int(i):
+    i_ = int(i)
+    if i_ != i or i_ < 0:
+        raise ValueError("not a non-negative integer: '%s'" % i)
+    return i_
 
 #
 # Validators
@@ -36,29 +43,27 @@ def _asvalid_dtype(dt):
 def _asvalid_k(k):
     """Return valid value of k if possible.
 
-    For b-splines `k` must integer and >= 0
+    For b-splines `k` must integer and >= 0.
 
     Parameter
     ---------
-    k : array_like
-      The b-spline degrees.
+    k : object
+        Should be a number or sequence of numbers 
 
     Returns
     -------
-    valid_k : tuple
-       If any element of `k` is equal to a non-negative integer, returns
-       that value.
+    valid_k : list
+       A list of non-negative integers equal to the orignal `k` or the
+       items contained in it.
 
     Raises
     ------
     ValueError
 
     """
-    k = np.array(k, ndmin=1)
-    k_ = k.astype(np.int)
-    if ((k_ != k) | (k_ < 0)).any():
-        raise ValueError("Degrees must be non-negative integers.")
-    return list(k_)
+    if not isinstance(k, collections.Iterable):
+        k = [k]
+    return [nonneg_int(i) for i in k]
 
 
 def _asvalid_t(t, k, dtype):
@@ -664,7 +669,7 @@ def bsplderiv(tck, n=1, axis=0):
     deriv : Tck
 
     """
-    n = int(n)
+    n = nonneg_int(n)
     if not isinstance(tck, Tck):
         raise ValueError("tck must be an instance of Tck")
     if n > tck.k[axis]:
