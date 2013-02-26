@@ -230,14 +230,14 @@ def _bsplvander(x, t, k, dtype=np.double):
     return van
 
 
-def _bsplval(tck, x, axis=0):
+def _bsplval(bsp, x, axis=0):
     """Cython implementation of bsplval.
 
     See bsplval for documentation. All arguments are assumed valid.
 
     Parameters
     ----------
-    tck : Tck
+    bsp : BSpline
         The b-spline of which to take the derivative.
     n   : int
         The number of derivatives to take.
@@ -248,7 +248,7 @@ def _bsplval(tck, x, axis=0):
        The b-spline evaluated at the points `x`
 
     """
-    t_, c_, k_ = tck.tck
+    t_, c_, k_ = bsp.tck
     t = t_.pop(axis)
     c = np.rollaxis(c_, axis)
     k = k_.pop(axis)
@@ -262,8 +262,8 @@ def _bsplval(tck, x, axis=0):
     u = np.searchsorted(t, x, side='right')
     u.clip(nord, n, out=u)
 
-    val = np.empty((m,) + c.shape[1:], dtype=tck.dtype)
-    ci = np.empty((nord,) + c.shape[1:], dtype=tck.dtype)
+    val = np.empty((m,) + c.shape[1:], dtype=bsp.dtype)
+    ci = np.empty((nord,) + c.shape[1:], dtype=bsp.dtype)
     for i in range(m):
         ui = u[i]
         xi = x[i]
@@ -277,31 +277,31 @@ def _bsplval(tck, x, axis=0):
 
     val = np.rollaxis(val, axis)
 
-    return Tck(t_, val, k_)
+    return BSpline(t_, k_, val)
 
 
-def _bsplderiv(tck, n, axis=0):
+def _bsplderiv(bsp, n, axis=0):
     """Cython implementation of bsplderiv.
 
     All arguments are assumed valid.
 
     Parameters
     ----------
-    tck : Tck
+    bsp : BSpline
         The spline parameters of which to take the derivative.
     n   : int
         The number of derivatives to take.
 
     Returns
     -------
-    derivative : Tck instance
+    derivative : BSpline instance
 
     """
-    t_, c_, k_ = tck.tck
+    t_, c_, k_ = bsp.tck
     t = t_[axis]
     c = np.rollaxis(c_, axis)
     k = k_[axis]
-    dtype = tck.dtype
+    dtype = bsp.dtype
 
     for i in range(n):
         c = k * (c[1:] - c[:-1]) / (t[k + 1: -1] - t[1: -(k + 1)])
@@ -312,14 +312,14 @@ def _bsplderiv(tck, n, axis=0):
     c_ = np.rollaxis(c, 0, axis + 1)
     k_[axis] = k
 
-    return Tck(t_, c_, k_, dtype=dtype)
+    return BSpline(t_, k_, c_, dtype=dtype)
 
 
 #
 # Public interface
 #
 
-class Tck(object):
+class BSpline(object):
     """Class to hold tck values for b-splines.
 
     This is needed so that we do not need to validate the contents
@@ -345,7 +345,7 @@ class Tck(object):
     """
     __array_priority__ = 1000
 
-    def __init__(self, t, c, k, dtype=np.double, ndim=1):
+    def __init__(self, t, k, c=None, dtype=np.double):
         k = _asvalid_k(k)
         t = _asvalid_t(t, k, dtype=dtype)
         c = _asvalid_c(c, t, k, dtype=dtype)
@@ -358,7 +358,7 @@ class Tck(object):
 
     def __add__(self, other):
         c1 = self.c
-        if isinstance(other, Tck):
+        if isinstance(other, BSpline):
             if not self._is_compatible_tck(other):
                 raise ValueError("Incompatible knots")
             c2 = other.c
@@ -381,12 +381,12 @@ class Tck(object):
         except:
             raise ValueError("Incompatible array scalar")
 
-        return Tck(self.t, c, self.k)
+        return BSpline(self.t, self.k, c)
 
 
     def __sub__(self, other):
         c1 = self.c
-        if isinstance(other, Tck):
+        if isinstance(other, BSpline):
             if not self._is_compatible_tck(other):
                 raise ValueError("Incompatible knots")
             c2 = other.c
@@ -409,7 +409,7 @@ class Tck(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return Tck(self.t, c, self.k)
+        return BSpline(self.t, self.k, c)
 
 
     def __radd__(self, other):
@@ -426,7 +426,7 @@ class Tck(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return Tck(self.t, c, self.k)
+        return BSpline(self.t, self.k, c)
 
 
     def __rsub__(self, other):
@@ -443,12 +443,12 @@ class Tck(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return Tck(self.t, c, self.k)
+        return BSpline(self.t, self.k, c)
 
 
     def __mul__(self, other):
-        if isinstance(other, Tck):
-            raise TypeError(type_msg %('*', 'Tck', 'Tck'))
+        if isinstance(other, BSpline):
+            raise TypeError(type_msg %('*', 'BSpline', 'BSpline'))
         c1 = self.c
         try:
             c2 = np.array(other, dtype=self.dtype)
@@ -464,12 +464,12 @@ class Tck(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return Tck(self.t, c, self.k)
+        return BSpline(self.t, self.k, c)
 
 
     def __div__(self, other):
-        if isinstance(other, Tck):
-            raise TypeError(type_msg % ('/', 'Tck', 'Tck'))
+        if isinstance(other, BSpline):
+            raise TypeError(type_msg % ('/', 'BSpline', 'BSpline'))
 
         c1 = self.c
         try:
@@ -486,7 +486,7 @@ class Tck(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return Tck(self.t, c, self.k)
+        return BSpline(self.t, self.k, c)
 
 
     def __rmul__(self, other):
@@ -494,7 +494,7 @@ class Tck(object):
         try:
             c2 = np.array(other, dtype=self.dtype)
         except:
-            raise TypeError(type_msg % ('*', type(other).__name__, 'Tck'))
+            raise TypeError(type_msg % ('*', type(other).__name__, 'BSpline'))
 
         if c2.ndim > self.range_ndim:
             raise ValueError("Incompatible scalar")
@@ -504,7 +504,7 @@ class Tck(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return Tck(self.t, c, self.k)
+        return BSpline(self.t, self.k, c)
 
 
     def _is_compatible_tck(self, other):
@@ -631,57 +631,57 @@ def bsplvander(x, t, k, dtype=np.double):
     return _bsplvander(x, t[0], k[0], dtype=dtype)
 
 
-def bsplval(x, tck):
+def bsplval(x, bsp):
     """Evaluate b-spline defined by t,c,k at x.
 
     Parameters
     ----------
     x : array_like
         Points at which to evaluate the spline.
-    tck : Tck
-        Instance of Tck.
+    bsp : BSpline
+        Instance of BSpline.
 
     Returns
     -------
     y : ndarray
         The b-spline evaluated at the points `x`. It has the type
-        specified in `tck`.
+        specified in `bsp`.
 
     """
-    _asvalid_c_array(x, dtype=tck.dtype)
-    return _bsplval(tck, x)
+    _asvalid_c_array(x, dtype=bsp.dtype)
+    return _bsplval(bsp, x)
 
 
-def bsplderiv(tck, n=1, axis=0):
-    """Take derivatives of the b-spline defined by tck.
+def bsplderiv(bsp, n=1, axis=0):
+    """Take derivatives of the b-spline defined by bsp.
 
     All arguments are assumed valid.
 
     Parameters
     ----------
-    tck : Tck
+    bsp : BSpline
         The b-spline of which to take the derivative.
     n   : {1, int}
         Number of derivatives to take.
 
     Returns
     -------
-    deriv : Tck
+    deriv : BSpline
 
     """
     n = nonneg_int(n)
-    if not isinstance(tck, Tck):
-        raise ValueError("tck must be an instance of Tck")
-    if n > tck.k[axis]:
+    if not isinstance(bsp, BSpline):
+        raise ValueError("bsp must be an instance of BSpline")
+    if n > bsp.k[axis]:
         raise ValueError("n is larger than the spline degree")
-    return _bsplderiv(tck, n, axis)
+    return _bsplderiv(bsp, n, axis)
 
 
-def bsplinteg(tck, n=1):
+def bsplinteg(bsp, n=1):
     pass
 
 
-def bspzeros(tck):
+def bspzeros(bsp):
     pass
 
 
