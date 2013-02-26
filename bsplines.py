@@ -14,91 +14,68 @@ def nonneg_int(i):
 # Validators
 #
 
-def _asvalid_dtype(dt):
-    """Check supported dtype.
+
+def asvalid_tkcd(t, k, c=None, dtype=np.double, copy=0):
+    """Convert and validate b-spline knot points and degrees.
+
+    Converts degrees to equal non-negative integers, knot points to not
+    writeable array of dtype `dtype`, and checks that the dtype is
+    acceptable and the and the knot points are compatible with the
+    degrees.
 
     Parameters
     ----------
-    dt : dtype
-        The dtype to be checked.
+    t : array_like
+        list of array of knot points in non-decreasing order. The domain
+        of the spline is the polytope with sides ``t[k] <= x <= t[m - k
+        - 1]`` where k is the corresponding degree. No side can have
+        zero length.  consequently the number ``n`` of knots defining
+        each side must satisfy ``n >= 2*k + 2``, where `k` is the
+        corresponding degree.
+    k : number, sequence 
+        Can be a non-negative integer if domain is 1-D, else a sequence
+        of non-negative integers. For this application 1.0 will be
+        converted to 1 but 1.5 will fail.
+    c : array_like, optional
+        Array of coefficients of length equal to ``n - k - 1``,
+        where ``k`` is the degree of the spline and ``n`` is the
+        number of knot points
+    dtype : {np.double, np.single}, optional
+        The dtype of the knot points and coefficients.
+    copy : {False, True}, optional
+        Whether or not to force a copy of the arrays. If True, then the
+        knot points are also made not writeable.
 
     Returns
     -------
-    valid_dtype: dtype
-        Same as `dt` if it is supported.
-
-    Raises
-    ------
-    ValueError
-
-    """
-    if np.issubdtype(dt, np.double):
-        return dt
-    if np.issubdtype(dt, np.single):
-        return dt
-    else:
-       raise ValueError("Unsupported dtype %s" % dt)
-
-
-def _asvalid_k(k):
-    """Return valid value of k if possible.
-
-    For b-splines `k` must integer and >= 0.
-
-    Parameter
-    ---------
-    k : object
-        Should be a number or sequence of numbers 
-
-    Returns
-    -------
+    valid_t : list
+        A list of valid knot arrays of dtype `dtype`.
     valid_k : list
-       A list of non-negative integers equal to the orignal `k` or the
-       items contained in it.
+        A list of non-negative integers taken from `k`.
+    valid_c : {ndarray, None}
+        Valid coefficient array of the specified dtype or None.
+    valid_dtype: dtype
+        The dtype of the knot points and the base dtype of the
+        coefficients.
 
     Raises
     ------
     ValueError
 
     """
+    # validate dtype
+    if dtype != np.double and dtype != np.single:
+       raise ValueError("Unsupported dtype %s" % dtype)
+
+    # validate degrees
     if not isinstance(k, collections.Iterable):
         k = [k]
-    return [nonneg_int(i) for i in k]
+    k = [nonneg_int(i) for i in k]
 
-
-def _asvalid_t(t, k, dtype):
-    """Return valid value of t and k if possible.
-
-    Convert and validate the knot points `t`, given validated `k`
-    and `dtype`.
-
-    Parameter
-    ---------
-    t : list
-       list of array of knot points in non-decreasing order. The domain of
-       the spline is the polytope with sides ``t[k] <= x <= t[m - k - 1]``
-       where k is the corresponding degree. No side can have zero length.
-       consequently the number ``n`` of knots defining each side must satisfy
-       ``n >= 2*k + 2``, where `k` is the corresponding degree.
-    k : list,
-       List of valid degrees.
-    dtype : {single, double}
-       Valid dtype for the knot points.
-
-    Returns
-    -------
-
-    valid_t : list
-       list of valid knot arrays of the specified dtype.
-
-    Raises
-    ------
-    ValueError
-
-    """
+    # validate knot points
     try:
         try:
-            t = np.array(t, dtype=dtype, ndmin=1)
+            t = np.array(t, dtype=dtype, ndmin=1, copy=copy)
             t.setflags(write=0)
             if t.ndim == 1 and len(t) != 0:
                 t = [t]
@@ -107,11 +84,8 @@ def _asvalid_t(t, k, dtype):
             else:
                 raise ValueError()
         except:
-            t = [np.array(t_, dtype=dtype, ndmin=1) for t_ in t]
-            for t_ in t:
-                t_.setflags(write=0)
+            t = [np.array(t_, dtype=dtype, ndmin=1, copy=copy) for t_ in t]
     except:
-        print t
         raise ValueError("Unable to convert knot points to arrays.")
     if len(t) != len(k):
         raise ValueError("Knot points and degrees have different dimensions")
@@ -119,48 +93,22 @@ def _asvalid_t(t, k, dtype):
         raise ValueError("Knot points must be non-decreasing")
     if any([len(t_) < 2 * k_ + 2 for t_, k_ in zip(t, k)]):
         raise ValueError("Not enough knot points for degrees")
-    if any([t_[k_] == t_[k_+ 1] for t_, k_ in zip(t, k)]):
-        raise ValueError("First interior interval must have positive length.")
-    if any([t_[-(k_ + 2)] == t_[-(k_ + 1)] for t_, k_ in zip(t, k)]):
-        raise ValueError("Last interior interval must have positive length.")
+    if any([t_[k_] == t_[-(k_+ 1)] for t_, k_ in zip(t, k)]):
+        raise ValueError("Knot point interior must have positive length")
+    if copy:
+        for t_ in t:
+            t_.setflags(write=0)
 
-    return t
+    # validate coefficient array.
+    if c is not None:
+        c = np.array(c, dtype=dtype)
+        if c.ndim < len(k):
+            raise ValueError("To few dimensions for knot points.")
+        if any([c.shape[i] != len(t[i]) - k[i] - 1 for i in range(len(k))]):
+            raise ValueError("Wrong coefficient shape for knot points.")
 
+    return t, k, c, dtype
 
-def _asvalid_c(c, t, k, dtype=np.double):
-    """Return valid value of t, c, and k if possible.
-
-    Convert and validate the coefficients `c` given validated `t`,
-    `k`, and `dtype`.
-
-    Parameter
-    ---------
-    c : array_like,
-       Array of coefficients of length equal to ``n - k - 1``,
-       where ``k`` is the degree of the spline and ``n`` is the
-       number of knot points
-    t : ndarray, shape (n,)
-       Array of knot points, assumed validated.
-    k : int
-       Degree of the spline, assumed validated.
-
-    Returns
-    -------
-
-    valid_c : ndarray
-       Valid coefficient array of the specified dtype.
-
-    Raises
-    ------
-    ValueError
-
-    """
-    c = np.array(c, dtype=dtype)
-    if c.ndim < len(k):
-        raise ValueError("To few dimensions for dimensionality.")
-    if any([c.shape[i] != len(t[i]) - k[i] - 1 for i in range(len(k))]):
-        raise ValueError("Wrong number of coefficients.")
-    return c
 
 
 def _asvalid_c_array(x, dtype=np.double, copy=False, ndmin=1, maxdim=1):
@@ -177,7 +125,7 @@ def _asvalid_c_array(x, dtype=np.double, copy=False, ndmin=1, maxdim=1):
 #
 
 
-def _bsplvander(x, t, k, dtype=np.double):
+def _bsplvander(x, t, k, axis=0, dtype=np.double):
     """Cython implementation of bsplvander.
 
     See bsplvander for documentation. All arguments are assumed valid.
@@ -200,6 +148,10 @@ def _bsplvander(x, t, k, dtype=np.double):
         the knot sequence `knots`.
 
     """
+    x = _asvalid_c_array(x, dtype=dtype)
+    t, k, c, d = asvalid_tkcd(t, k, dtype=dtype)
+    k = k[axis]
+    t = t[axis]
     nord = k + 1
     m = len(x)
     n = len(t) - nord
@@ -230,7 +182,7 @@ def _bsplvander(x, t, k, dtype=np.double):
     return van
 
 
-def _bsplval(bsp, x, axis=0):
+def _bsplval(x, bsp, axis=0):
     """Cython implementation of bsplval.
 
     See bsplval for documentation. All arguments are assumed valid.
@@ -248,6 +200,7 @@ def _bsplval(bsp, x, axis=0):
        The b-spline evaluated at the points `x`
 
     """
+    x = _asvalid_c_array(x, bsp.dtype)
     t_, c_, k_ = bsp.tck
     t = t_.pop(axis)
     c = np.rollaxis(c_, axis)
@@ -345,10 +298,9 @@ class BSpline(object):
     """
     __array_priority__ = 1000
 
+
     def __init__(self, t, k, c=None, dtype=np.double):
-        k = _asvalid_k(k)
-        t = _asvalid_t(t, k, dtype=dtype)
-        c = _asvalid_c(c, t, k, dtype=dtype)
+        t, k, c, dtype = asvalid_tkcd(t, k, c, dtype, copy=1)
         self.__k = k
         self.__t = t
         self.__c = c
@@ -566,7 +518,7 @@ class BSpline(object):
         return self.t, self.c, self.k
 
 
-def bsplvander(x, t, k, dtype=np.double):
+def bsplvander(x, t, k, axis=0, dtype=np.double):
     """Pseudo-Vandermonde matrix of b-spline basis functions.
 
     The returned matrix is defined by
@@ -623,15 +575,10 @@ def bsplvander(x, t, k, dtype=np.double):
     (50, 4)
 
     """
-    dtype = _asvalid_dtype(dtype)
-    # Fixme, need different routines?
-    k = _asvalid_k(k)
-    t = _asvalid_t(t, k, dtype=dtype)
-    x = _asvalid_c_array(x, dtype=dtype)
-    return _bsplvander(x, t[0], k[0], dtype=dtype)
+    return _bsplvander(x, t, k, dtype=dtype)
 
 
-def bsplval(x, bsp):
+def bsplval(x, bsp, axis=0):
     """Evaluate b-spline defined by t,c,k at x.
 
     Parameters
@@ -648,8 +595,7 @@ def bsplval(x, bsp):
         specified in `bsp`.
 
     """
-    _asvalid_c_array(x, dtype=bsp.dtype)
-    return _bsplval(bsp, x)
+    return _bsplval(x, bsp, axis=0)
 
 
 def bsplderiv(bsp, n=1, axis=0):
