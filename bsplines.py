@@ -15,7 +15,7 @@ def nonneg_int(i):
 #
 
 
-def asvalid_tkcd(t, k, c=None, dtype=np.double, copy=0):
+def asvalid_base(t, k, dtype=np.double, copy=0):
     """Convert and validate b-spline knot points and degrees.
 
     Converts degrees to equal non-negative integers, knot points to not
@@ -32,7 +32,7 @@ def asvalid_tkcd(t, k, c=None, dtype=np.double, copy=0):
         zero length.  consequently the number ``n`` of knots defining
         each side must satisfy ``n >= 2*k + 2``, where `k` is the
         corresponding degree.
-    k : number, sequence 
+    k : number, sequence
         Can be a non-negative integer if domain is 1-D, else a sequence
         of non-negative integers. For this application 1.0 will be
         converted to 1 but 1.5 will fail.
@@ -65,7 +65,7 @@ def asvalid_tkcd(t, k, c=None, dtype=np.double, copy=0):
     """
     # validate dtype
     if dtype != np.double and dtype != np.single:
-       raise ValueError("Unsupported dtype %s" % dtype)
+        raise ValueError("Unsupported dtype %s" % dtype)
 
     # validate degrees
     if not isinstance(k, collections.Iterable):
@@ -99,16 +99,16 @@ def asvalid_tkcd(t, k, c=None, dtype=np.double, copy=0):
         for t_ in t:
             t_.setflags(write=0)
 
-    # validate coefficient array.
-    if c is not None:
-        c = np.array(c, dtype=dtype)
-        if c.ndim < len(k):
-            raise ValueError("To few dimensions for knot points.")
-        if any([c.shape[i] != len(t[i]) - k[i] - 1 for i in range(len(k))]):
-            raise ValueError("Wrong coefficient shape for knot points.")
+    return t, k, dtype
 
-    return t, k, c, dtype
 
+def asvalid_coef(c, domain_shape, dtype=np.double, copy=0, contiguous=0):
+    c = np.array(c, dtype=dtype, copy=copy)
+    if not c.shape[:len(domain_shape)] == domain_shape:
+        raise ValueError("Dimensions do not match domain")
+    if contiguous:
+        c = np.ascontiguousarray(c)
+    return c
 
 
 def _asvalid_c_array(x, dtype=np.double, copy=False, ndmin=1, maxdim=1):
@@ -125,7 +125,7 @@ def _asvalid_c_array(x, dtype=np.double, copy=False, ndmin=1, maxdim=1):
 #
 
 
-def _bsplvander(x, t, k, axis=0, dtype=np.double):
+def _bsplvander(x, t, k, dtype=np.double):
     """Cython implementation of bsplvander.
 
     See bsplvander for documentation. All arguments are assumed valid.
@@ -149,9 +149,9 @@ def _bsplvander(x, t, k, axis=0, dtype=np.double):
 
     """
     x = _asvalid_c_array(x, dtype=dtype)
-    t, k, c, d = asvalid_tkcd(t, k, dtype=dtype)
-    k = k[axis]
-    t = t[axis]
+    t, k, dtype = asvalid_base(t, k, dtype=dtype)
+    k = k[0]
+    t = t[0]
     nord = k + 1
     m = len(x)
     n = len(t) - nord
@@ -200,6 +200,8 @@ def _bsplval(x, bsp, axis=0):
        The b-spline evaluated at the points `x`
 
     """
+    if axis >= bsp.domain_ndim:
+        raise ValueError("Axis is out of range.")
     x = _asvalid_c_array(x, bsp.dtype)
     t_, c_, k_ = bsp.tck
     t = t_.pop(axis)
@@ -230,7 +232,12 @@ def _bsplval(x, bsp, axis=0):
 
     val = np.rollaxis(val, axis)
 
-    return BSpline(t_, k_, val)
+    # Return BSpline if there are still variables to evaluate over.
+    if len(k_) != 0:
+        # Debug, want check = 0 for production
+        return BSpline(t_, k_, val)
+    return val
+
 
 
 def _bsplderiv(bsp, n, axis=0):
@@ -256,15 +263,17 @@ def _bsplderiv(bsp, n, axis=0):
     k = k_[axis]
     dtype = bsp.dtype
 
-    for i in range(n):
+    while n > 0:
         c = k * (c[1:] - c[:-1]) / (t[k + 1: -1] - t[1: -(k + 1)])
         t = t[1:-1]
-        k = k - 1
+        k -= 1
+        n -= 1
 
     t_[axis] = t
     c_ = np.rollaxis(c, 0, axis + 1)
     k_[axis] = k
 
+    # Debug, want check = 0 for production
     return BSpline(t_, k_, c_, dtype=dtype)
 
 
@@ -272,7 +281,79 @@ def _bsplderiv(bsp, n, axis=0):
 # Public interface
 #
 
-class BSpline(object):
+class BSDomain(object):
+
+    def __init__(self, knots, degrees, dtype=np.double, check=1):
+        if check:
+            t, k, d = asvalid_base(knots, degrees, dtype=dtype, copy=0)
+        self.__knots = t
+        self.__degrees = k
+        self.__dtype = d
+        self.__ndim = len(k)
+        self.__domain = [(a[n], a[-(n + 1)]) for n, a in zip(k, t)]
+        self.__domain_shape = tuple([len(a) - n - 1 for n, a in zip(k, t)])
+
+
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        if self.dtype != other.dtype:
+            return False
+        if self.degrees != other.degrees:
+            return False
+        if self.domain_shape != other.domain_shape:
+            return False
+        if any([(a != b).any() for a, b in zip(self.knots, other.knots)]):
+            return False
+        return True
+
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
+    def __copy__(self):
+        # modified shallow copy
+        return BSDomain(self.knots, self.degrees, self.dtype, check=0)
+
+
+    @property
+    def dtype(self):
+        return self.__dtype
+
+
+    @property
+    def knots(self):
+        return self.__knots[:]
+
+
+    @property
+    def degrees(self):
+        return self.__degrees[:]
+
+
+    @property
+    def domain(self):
+        return self.__domain[:]
+
+
+    @property
+    def domain_ndim(self):
+        return self.__ndim
+
+
+    @property
+    def domain_shape(self):
+        return self.__domain_shape
+
+
+    def bspline(self, c):
+        c = asvalid_coef(c, self.domain_shape, dtype=self.dtype, copy=1)
+        #Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c, self.dtype)
+
+
+class BSpline(BSDomain):
     """Class to hold tck values for b-splines.
 
     This is needed so that we do not need to validate the contents
@@ -299,21 +380,31 @@ class BSpline(object):
     __array_priority__ = 1000
 
 
-    def __init__(self, t, k, c=None, dtype=np.double):
-        t, k, c, dtype = asvalid_tkcd(t, k, c, dtype, copy=1)
-        self.__k = k
-        self.__t = t
-        self.__c = c
-        self.__dom = [(a[n], a[-(n + 1)]) for n, a in zip(k, t)]
-        self.__dtype = dtype
+    def __init__(self, knots, degrees, coef, dtype=np.double, check=1):
+        BSDomain.__init__(self, knots, degrees, check=check)
+        self.__coef = asvalid_coef(coef, self.domain_shape, copy=1)
+
+
+    def __eq__(self, other):
+        return NotImplemented
+
+
+    def __ne__(self, other):
+        return NotImplemented
+
+
+    def __copy__(self):
+        # modified shallow copy
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, self.coef, self.dtype)
 
 
     def __add__(self, other):
-        c1 = self.c
-        if isinstance(other, BSpline):
-            if not self._is_compatible_tck(other):
-                raise ValueError("Incompatible knots")
-            c2 = other.c
+        c1 = self.coef
+        if isinstance(other, self.__class__):
+            if not self.eq_base(other):
+                raise ValueError("Incompatible bases")
+            c2 = other.coef
             n = c1.ndim - c2.ndim
             m = self.domain_ndim
             # Make vectors broadcast
@@ -333,15 +424,16 @@ class BSpline(object):
         except:
             raise ValueError("Incompatible array scalar")
 
-        return BSpline(self.t, self.k, c)
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c)
 
 
     def __sub__(self, other):
-        c1 = self.c
-        if isinstance(other, BSpline):
-            if not self._is_compatible_tck(other):
-                raise ValueError("Incompatible knots")
-            c2 = other.c
+        c1 = self.coef
+        if isinstance(other, self.__class__):
+            if not self.eq_base(other):
+                raise ValueError("Incompatible bases")
+            c2 = other.coef
             n = c1.ndim - c2.ndim
             m = self.domain_ndim
             # Make vectors broadcast
@@ -361,15 +453,17 @@ class BSpline(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return BSpline(self.t, self.k, c)
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c)
 
 
     def __radd__(self, other):
-        c1 = self.c
+        c1 = self.coef
         try:
             c2 = np.array(other, dtype=self.dtype)
         except:
             return NotImplemented
+
         if c2.ndim > self.range_ndim:
             raise ValueError("Incompatible scalar")
 
@@ -378,15 +472,17 @@ class BSpline(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return BSpline(self.t, self.k, c)
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c)
 
 
     def __rsub__(self, other):
-        c1 = self.c
+        c1 = self.coef
         try:
             c2 = np.array(other, dtype=self.dtype)
         except:
             return NotImplemented
+
         if c2.ndim > self.range_ndim:
             raise ValueError("Incompatible scalar")
 
@@ -395,13 +491,16 @@ class BSpline(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return BSpline(self.t, self.k, c)
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c)
 
 
     def __mul__(self, other):
-        if isinstance(other, BSpline):
-            raise TypeError(type_msg %('*', 'BSpline', 'BSpline'))
-        c1 = self.c
+        if isinstance(other, self.__class__):
+            msg = type_msg % (self.__class__.__name__, other)
+            raise TypeError(msg)
+
+        c1 = self.coef
         try:
             c2 = np.array(other, dtype=self.dtype)
         except:
@@ -416,14 +515,16 @@ class BSpline(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return BSpline(self.t, self.k, c)
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c)
 
 
     def __div__(self, other):
         if isinstance(other, BSpline):
-            raise TypeError(type_msg % ('/', 'BSpline', 'BSpline'))
+            msg = type_msg % (self.__class__.__name__, other)
+            raise TypeError(msg)
 
-        c1 = self.c
+        c1 = self.coef
         try:
             c2 = np.array(other, dtype=self.dtype)
         except:
@@ -438,15 +539,16 @@ class BSpline(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return BSpline(self.t, self.k, c)
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c)
 
 
     def __rmul__(self, other):
-        c1 = self.c
+        c1 = self.coef
         try:
             c2 = np.array(other, dtype=self.dtype)
         except:
-            raise TypeError(type_msg % ('*', type(other).__name__, 'BSpline'))
+            raise ValueError("Scalar is not array_like")
 
         if c2.ndim > self.range_ndim:
             raise ValueError("Incompatible scalar")
@@ -456,69 +558,39 @@ class BSpline(object):
         except:
             raise ValueError("Incompatible scalar")
 
-        return BSpline(self.t, self.k, c)
+        # Debug, want check = 0 for production
+        return BSpline(self.knots, self.degrees, c)
 
 
-    def _is_compatible_tck(self, other):
-        if self.dtype != other.dtype:
-            return False
-        elif any([(t1 != t2).any() for t1, t2 in zip(self.t, other.t)]):
-            return False
-        else:
-            return True
+    def eq_base(self, other):
+        return BSDomain.__eq__(self, other)
 
 
-    @property
-    def dtype(self):
-        return self.__dtype
+    def get_base(self):
+        return BSDomain(self.knots, self.degrees, self.dtype, check=0)
 
 
     @property
-    def t(self):
-        return self.__t[:]
-
-
-    @property
-    def c(self):
-        return self.__c.view()
-
-
-    @property
-    def k(self):
-        return self.__k[:]
-
-
-    @property
-    def domain(self):
-        return self.__dom[:]
-
-
-    @property
-    def domain_ndim(self):
-        return len(self.__k)
-
-
-    @property
-    def domain_shape(self):
-        return self.c.shape[:len(self.__k)]
+    def coef(self):
+        return self.__coef.view()
 
 
     @property
     def range_ndim(self):
-        return self.c.ndim - len(self.__k)
+        return self.coef.ndim - self.domain_ndim
 
 
     @property
     def range_shape(self):
-        return self.c.shape[len(self.__k):]
+        return self.coef.shape[self.domain_ndim:]
 
 
     @property
     def tck(self):
-        return self.t, self.c, self.k
+        return self.knots, self.coef, self.degrees
 
 
-def bsplvander(x, t, k, axis=0, dtype=np.double):
+def bsplvander(x, t, k, dtype=np.double):
     """Pseudo-Vandermonde matrix of b-spline basis functions.
 
     The returned matrix is defined by
@@ -595,7 +667,7 @@ def bsplval(x, bsp, axis=0):
         specified in `bsp`.
 
     """
-    return _bsplval(x, bsp, axis=0)
+    return _bsplval(x, bsp, axis=axis)
 
 
 def bsplderiv(bsp, n=1, axis=0):
@@ -618,7 +690,7 @@ def bsplderiv(bsp, n=1, axis=0):
     n = nonneg_int(n)
     if not isinstance(bsp, BSpline):
         raise ValueError("bsp must be an instance of BSpline")
-    if n > bsp.k[axis]:
+    if n > bsp.degrees[axis]:
         raise ValueError("n is larger than the spline degree")
     return _bsplderiv(bsp, n, axis)
 

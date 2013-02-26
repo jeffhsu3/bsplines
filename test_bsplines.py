@@ -28,7 +28,7 @@ def test_bspline_values():
         for j in range(n):
             msg = "k = %d, j = %d" % (k, j)
             bsp = bs.BSpline(t, k, c[j])
-            res = bs.bsplval(x, bsp).c
+            res = bs.bsplval(x, bsp)
             assert_almost_equal(res, b[j], err_msg=msg)
         # Prepare next set of Bernstein polynomial values if needed.
         if n < maxord:
@@ -52,7 +52,7 @@ def test_bspvander():
         for j in range(n):
             msg = "k = %d, j = %d" % (k, j)
             bsp = bs.BSpline(t, k, c[j])
-            tgt = bs.bsplval(x, bsp).c
+            tgt = bs.bsplval(x, bsp)
             assert_almost_equal(v[:, j], tgt, err_msg=msg)
 
 def test_bspderiv():
@@ -70,11 +70,11 @@ def test_bspderiv():
         c = np.eye(len(t) - n)
         for j in range(n):
             msg = "k = %d, j = %d" % (k, j)
-            bsp = bs.BSpline(t, k, c[j])
-            dck = bs.bsplderiv(bsp, n=1)
-            #tgt = (bs.bsplval(xr, tck) - bs.bsplval(xl, tck))/dx
-            #res = bs.bsplval(xm, dck)
-            #assert_almost_equal(res, tgt, err_msg=msg)
+            spl = bs.BSpline(t, k, c[j])
+            der = bs.bsplderiv(spl, n=1)
+            res = bs.bsplval(xm, der)
+            tgt = (bs.bsplval(xr, spl) - bs.bsplval(xl, spl))/dx
+            assert_almost_equal(res, tgt, err_msg=msg)
 
 
 if __name__ == "__main__":
