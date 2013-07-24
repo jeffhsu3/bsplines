@@ -3,4 +3,5 @@
 *.pkl
 *.pdf
 *.npz
-
+*.swp
+build/
